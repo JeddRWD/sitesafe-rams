@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, use } from "react";
 import SignatureCanvas from "react-signature-canvas";
 import { supabase } from "../../../lib/supabaseClient";
 
@@ -28,7 +28,14 @@ const cardStyle = { background: "white", borderRadius: 18, padding: 28, boxShado
 const inputStyle = { width: "100%", padding: 13, border: "1px solid #d1d5db", borderRadius: 10, margin: "8px 0 14px", fontSize: 16 } as const;
 const buttonStyle = { background: "#1f2937", color: "white", border: "none", padding: "13px 18px", borderRadius: 10, fontWeight: "bold", cursor: "pointer" } as const;
 
-export default function SiteRamsPage({ params }: { params: { slug: string } }) {
+export default function SiteRamsPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const resolvedParams = use(params);
+  const slug = resolvedParams.slug;
+
   const [site, setSite] = useState<Site | null>(null);
   const [sections, setSections] = useState<RamsSection[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,7 +53,7 @@ export default function SiteRamsPage({ params }: { params: { slug: string } }) {
       const { data: siteData } = await supabase
         .from("sites")
         .select("*")
-        .eq("slug", params.slug)
+        .eq("slug", slug)
         .single();
 
       if (siteData) {
@@ -66,7 +73,7 @@ export default function SiteRamsPage({ params }: { params: { slug: string } }) {
     }
 
     loadSite();
-  }, [params.slug]);
+  }, [slug]);
 
   function checkAccess() {
     if (!site) return;
@@ -100,7 +107,7 @@ export default function SiteRamsPage({ params }: { params: { slug: string } }) {
       company_name: companyName,
       role,
       signature_data: signatureData,
-      rams_version: site.rams_version || 1
+      rams_version: site.rams_version || 1,
     });
 
     if (error) {
@@ -115,8 +122,25 @@ export default function SiteRamsPage({ params }: { params: { slug: string } }) {
     sigRef.current.clear();
   }
 
-  if (loading) return <main style={pageStyle}><div style={containerStyle}><div style={cardStyle}>Loading...</div></div></main>;
-  if (!site) return <main style={pageStyle}><div style={containerStyle}><div style={cardStyle}>Site not found.</div></div></main>;
+  if (loading) {
+    return (
+      <main style={pageStyle}>
+        <div style={containerStyle}>
+          <div style={cardStyle}>Loading...</div>
+        </div>
+      </main>
+    );
+  }
+
+  if (!site) {
+    return (
+      <main style={pageStyle}>
+        <div style={containerStyle}>
+          <div style={cardStyle}>Site not found.</div>
+        </div>
+      </main>
+    );
+  }
 
   if (!hasAccess) {
     return (
@@ -125,9 +149,21 @@ export default function SiteRamsPage({ params }: { params: { slug: string } }) {
           <div style={cardStyle}>
             <h1>{site.site_name}</h1>
             <p>Enter the site access code to view the RAMS.</p>
-            <input style={inputStyle} value={accessCode} onChange={(e) => setAccessCode(e.target.value)} placeholder="Access code" />
-            <button style={buttonStyle} onClick={checkAccess}>Access RAMS</button>
-            {message && <p style={{ color: "#b91c1c", fontWeight: "bold" }}>{message}</p>}
+
+            <input
+              style={inputStyle}
+              value={accessCode}
+              onChange={(e) => setAccessCode(e.target.value)}
+              placeholder="Access code"
+            />
+
+            <button style={buttonStyle} onClick={checkAccess}>
+              Access RAMS
+            </button>
+
+            {message && (
+              <p style={{ color: "#b91c1c", fontWeight: "bold" }}>{message}</p>
+            )}
           </div>
         </div>
       </main>
@@ -139,23 +175,54 @@ export default function SiteRamsPage({ params }: { params: { slug: string } }) {
       <div style={containerStyle}>
         <div style={cardStyle}>
           <h1>{site.site_name}</h1>
-          <p><strong>RAMS Version:</strong> {site.rams_version || 1}</p>
-          <p><strong>Start Date:</strong> {site.start_date || "Not set"}</p>
-          <p><strong>Expiry Date:</strong> {site.expiry_date || "Not set"}</p>
+          <p>
+            <strong>RAMS Version:</strong> {site.rams_version || 1}
+          </p>
+          <p>
+            <strong>Start Date:</strong> {site.start_date || "Not set"}
+          </p>
+          <p>
+            <strong>Expiry Date:</strong> {site.expiry_date || "Not set"}
+          </p>
         </div>
 
         <div style={cardStyle}>
           <h2>RAMS Sections</h2>
+
           {sections.map((section) => (
             <div key={section.id}>
               <button
-                style={{ width: "100%", textAlign: "left", background: "#eef2ff", border: "1px solid #c7d2fe", padding: 16, borderRadius: 12, fontWeight: "bold", cursor: "pointer", marginTop: 10 }}
-                onClick={() => setOpenSections({ ...openSections, [section.id]: !openSections[section.id] })}
+                style={{
+                  width: "100%",
+                  textAlign: "left",
+                  background: "#eef2ff",
+                  border: "1px solid #c7d2fe",
+                  padding: 16,
+                  borderRadius: 12,
+                  fontWeight: "bold",
+                  cursor: "pointer",
+                  marginTop: 10,
+                }}
+                onClick={() =>
+                  setOpenSections({
+                    ...openSections,
+                    [section.id]: !openSections[section.id],
+                  })
+                }
               >
                 {openSections[section.id] ? "▼" : "▶"} {section.title}
               </button>
+
               {openSections[section.id] && (
-                <div style={{ padding: 16, border: "1px solid #e5e7eb", borderTop: "none", borderRadius: "0 0 12px 12px", whiteSpace: "pre-wrap" }}>
+                <div
+                  style={{
+                    padding: 16,
+                    border: "1px solid #e5e7eb",
+                    borderTop: "none",
+                    borderRadius: "0 0 12px 12px",
+                    whiteSpace: "pre-wrap",
+                  }}
+                >
                   {section.content}
                 </div>
               )}
@@ -165,18 +232,71 @@ export default function SiteRamsPage({ params }: { params: { slug: string } }) {
 
         <div style={cardStyle}>
           <h2>Read & Understood Sign Off</h2>
-          <p>By signing below, I confirm I have read and understood the site specific RAMS.</p>
 
-          <input style={inputStyle} value={operativeName} onChange={(e) => setOperativeName(e.target.value)} placeholder="Operative name" />
-          <input style={inputStyle} value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Company name" />
-          <input style={inputStyle} value={role} onChange={(e) => setRole(e.target.value)} placeholder="Role" />
+          <p>
+            By signing below, I confirm I have read and understood the site
+            specific RAMS.
+          </p>
 
-          <SignatureCanvas ref={sigRef} canvasProps={{ style: { border: "2px dashed #9ca3af", borderRadius: 12, background: "white", width: "100%", height: 180, margin: "10px 0" } }} />
+          <input
+            style={inputStyle}
+            value={operativeName}
+            onChange={(e) => setOperativeName(e.target.value)}
+            placeholder="Operative name"
+          />
 
-          <button style={{ ...buttonStyle, background: "#6b7280" }} onClick={() => sigRef.current?.clear()}>Clear Signature</button>
-          <button style={{ ...buttonStyle, marginLeft: 10 }} onClick={submitSignature}>Submit Sign Off</button>
+          <input
+            style={inputStyle}
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            placeholder="Company name"
+          />
 
-          {message && <p style={{ color: message.includes("successfully") ? "#047857" : "#b91c1c", fontWeight: "bold" }}>{message}</p>}
+          <input
+            style={inputStyle}
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            placeholder="Role"
+          />
+
+          <SignatureCanvas
+            ref={sigRef}
+            canvasProps={{
+              style: {
+                border: "2px dashed #9ca3af",
+                borderRadius: 12,
+                background: "white",
+                width: "100%",
+                height: 180,
+                margin: "10px 0",
+              },
+            }}
+          />
+
+          <button
+            style={{ ...buttonStyle, background: "#6b7280" }}
+            onClick={() => sigRef.current?.clear()}
+          >
+            Clear Signature
+          </button>
+
+          <button
+            style={{ ...buttonStyle, marginLeft: 10 }}
+            onClick={submitSignature}
+          >
+            Submit Sign Off
+          </button>
+
+          {message && (
+            <p
+              style={{
+                color: message.includes("successfully") ? "#047857" : "#b91c1c",
+                fontWeight: "bold",
+              }}
+            >
+              {message}
+            </p>
+          )}
         </div>
       </div>
     </main>
