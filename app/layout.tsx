@@ -1,9 +1,9 @@
-import type { Metadata } from "next";
 import "./globals.css";
+import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "SiteSafe RAMS",
-  description: "Site specific RAMS access, review and operative sign-off system."
+  description: "Site specific RAMS access and sign off system"
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
