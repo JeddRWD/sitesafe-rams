@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import SignatureCanvas from "react-signature-canvas";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase } from "../../../lib/supabaseClient";
 
 type Site = {
   id: string;
@@ -22,157 +22,199 @@ type RamsSection = {
   section_order: number;
 };
 
-export default function SitePage({ params }: { params: { slug: string } }) {
+export default function SiteRamsPage({ params }: { params: { slug: string } }) {
   const [site, setSite] = useState<Site | null>(null);
   const [sections, setSections] = useState<RamsSection[]>([]);
   const [loading, setLoading] = useState(true);
-  const [code, setCode] = useState("");
-  const [unlocked, setUnlocked] = useState(false);
-  const [error, setError] = useState("");
+  const [accessCode, setAccessCode] = useState("");
+  const [hasAccess, setHasAccess] = useState(false);
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
   const [operativeName, setOperativeName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [role, setRole] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const signatureRef = useRef<SignatureCanvas | null>(null);
+  const [message, setMessage] = useState("");
+  const sigRef = useRef<SignatureCanvas | null>(null);
 
   useEffect(() => {
     async function loadSite() {
-      const { data: siteData, error: siteError } = await supabase
+      const { data: siteData } = await supabase
         .from("sites")
         .select("*")
         .eq("slug", params.slug)
         .single();
 
-      if (siteError || !siteData) {
-        setError("Site not found.");
-        setLoading(false);
-        return;
+      if (siteData) {
+        setSite(siteData);
+
+        const { data: sectionData } = await supabase
+          .from("rams_sections")
+          .select("*")
+          .eq("site_id", siteData.id)
+          .eq("is_active", true)
+          .order("section_order", { ascending: true });
+
+        setSections(sectionData || []);
       }
 
-      setSite(siteData);
-
-      const { data: sectionData } = await supabase
-        .from("rams_sections")
-        .select("*")
-        .eq("site_id", siteData.id)
-        .eq("is_active", true)
-        .order("section_order", { ascending: true });
-
-      setSections(sectionData || []);
       setLoading(false);
     }
 
     loadSite();
   }, [params.slug]);
 
-  function checkCode() {
+  function checkAccess() {
     if (!site) return;
-    if (code.trim().toLowerCase() === site.access_code.trim().toLowerCase()) {
-      setUnlocked(true);
-      setError("");
+
+    if (accessCode.trim().toLowerCase() === site.access_code.trim().toLowerCase()) {
+      setHasAccess(true);
+      setMessage("");
     } else {
-      setError("Incorrect access code.");
+      setMessage("Incorrect access code.");
     }
   }
 
   async function submitSignature() {
     if (!site) return;
+
     if (!operativeName.trim()) {
-      setError("Please enter your name.");
-      return;
-    }
-    if (!signatureRef.current || signatureRef.current.isEmpty()) {
-      setError("Please sign before submitting.");
+      setMessage("Please enter your name.");
       return;
     }
 
-    const signatureData = signatureRef.current.toDataURL("image/png");
+    if (!sigRef.current || sigRef.current.isEmpty()) {
+      setMessage("Please provide a signature.");
+      return;
+    }
 
-    const { error: insertError } = await supabase.from("rams_acknowledgements").insert({
+    const signatureData = sigRef.current.toDataURL("image/png");
+
+    const { error } = await supabase.from("rams_acknowledgements").insert({
       site_id: site.id,
       operative_name: operativeName,
       company_name: companyName,
       role,
       signature_data: signatureData,
-      rams_version: site.rams_version
+      rams_version: site.rams_version || 1
     });
 
-    if (insertError) {
-      setError(insertError.message);
+    if (error) {
+      setMessage("Could not submit signature. Please try again.");
       return;
     }
 
-    setSubmitted(true);
-    setError("");
+    setMessage("Signed and submitted successfully.");
+    setOperativeName("");
+    setCompanyName("");
+    setRole("");
+    sigRef.current.clear();
   }
 
-  if (loading) return <main className="p-6">Loading...</main>;
-
-  if (!site) return <main className="p-6 text-red-600">{error}</main>;
-
-  if (!unlocked) {
-    return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow p-8">
-          <h1 className="text-2xl font-bold mb-2">{site.site_name}</h1>
-          <p className="text-gray-600 mb-6">Enter the site RAMS access code to continue.</p>
-          <input
-            className="w-full border rounded-xl p-3 mb-3"
-            placeholder="Access code"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-          />
-          {error && <p className="text-red-600 mb-3">{error}</p>}
-          <button onClick={checkCode} className="w-full bg-blue-700 text-white rounded-xl p-3 font-semibold">
-            Access RAMS
-          </button>
-        </div>
-      </main>
-    );
+  if (loading) {
+    return <main className="page"><div className="container"><div className="card">Loading...</div></div></main>;
   }
 
-  if (submitted) {
+  if (!site) {
+    return <main className="page"><div className="container"><div className="card">Site not found.</div></div></main>;
+  }
+
+  if (!hasAccess) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-white rounded-2xl shadow p-8 text-center">
-          <h1 className="text-2xl font-bold mb-2">Signed Successfully</h1>
-          <p className="text-gray-600">Your RAMS acknowledgement has been recorded.</p>
+      <main className="page">
+        <div className="container">
+          <div className="card">
+            <h1>{site.site_name}</h1>
+            <p>Enter the site access code to view the RAMS.</p>
+            <input
+              className="input"
+              value={accessCode}
+              onChange={(e) => setAccessCode(e.target.value)}
+              placeholder="Access code"
+            />
+            <button className="button" onClick={checkAccess}>Access RAMS</button>
+            {message && <p className="error">{message}</p>}
+          </div>
         </div>
       </main>
     );
   }
 
   return (
-    <main className="max-w-4xl mx-auto p-6">
-      <div className="bg-white rounded-2xl shadow p-6 mb-6">
-        <h1 className="text-3xl font-bold">{site.site_name}</h1>
-        <p className="text-gray-600">RAMS Version {site.rams_version}</p>
-        <p className="text-sm text-gray-500 mt-2">Start: {site.start_date || "Not set"} | Expiry: {site.expiry_date || "Not set"}</p>
-      </div>
-
-      <div className="space-y-4 mb-8">
-        {sections.map((section) => (
-          <details key={section.id} className="bg-white rounded-2xl shadow p-5">
-            <summary className="font-bold cursor-pointer text-lg">{section.title}</summary>
-            <p className="whitespace-pre-wrap mt-4 text-gray-700 leading-relaxed">{section.content}</p>
-          </details>
-        ))}
-      </div>
-
-      <div className="bg-white rounded-2xl shadow p-6">
-        <h2 className="text-2xl font-bold mb-4">Read & Understood Declaration</h2>
-        <div className="grid gap-3 mb-4">
-          <input className="border rounded-xl p-3" placeholder="Operative name" value={operativeName} onChange={(e) => setOperativeName(e.target.value)} />
-          <input className="border rounded-xl p-3" placeholder="Company name" value={companyName} onChange={(e) => setCompanyName(e.target.value)} />
-          <input className="border rounded-xl p-3" placeholder="Role" value={role} onChange={(e) => setRole(e.target.value)} />
+    <main className="page">
+      <div className="container">
+        <div className="card">
+          <h1>{site.site_name}</h1>
+          <p><strong>RAMS Version:</strong> {site.rams_version || 1}</p>
+          <p><strong>Start Date:</strong> {site.start_date || "Not set"}</p>
+          <p><strong>Expiry Date:</strong> {site.expiry_date || "Not set"}</p>
         </div>
-        <div className="border rounded-xl bg-gray-50 mb-3">
-          <SignatureCanvas ref={signatureRef} canvasProps={{ className: "w-full h-48" }} />
+
+        <div className="card">
+          <h2>RAMS Sections</h2>
+          {sections.map((section) => (
+            <div key={section.id}>
+              <button
+                className="section-button"
+                onClick={() =>
+                  setOpenSections({
+                    ...openSections,
+                    [section.id]: !openSections[section.id],
+                  })
+                }
+              >
+                {openSections[section.id] ? "▼" : "▶"} {section.title}
+              </button>
+              {openSections[section.id] && (
+                <div className="section-content">{section.content}</div>
+              )}
+            </div>
+          ))}
         </div>
-        {error && <p className="text-red-600 mb-3">{error}</p>}
-        <div className="flex gap-3">
-          <button className="border rounded-xl px-4 py-3" onClick={() => signatureRef.current?.clear()}>Clear</button>
-          <button className="bg-blue-700 text-white rounded-xl px-4 py-3 font-semibold" onClick={submitSignature}>Submit Signature</button>
+
+        <div className="card">
+          <h2>Read & Understood Sign Off</h2>
+          <p>
+            By signing below, I confirm I have read and understood the site specific RAMS.
+          </p>
+
+          <input
+            className="input"
+            value={operativeName}
+            onChange={(e) => setOperativeName(e.target.value)}
+            placeholder="Operative name"
+          />
+
+          <input
+            className="input"
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            placeholder="Company name"
+          />
+
+          <input
+            className="input"
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            placeholder="Role"
+          />
+
+          <SignatureCanvas
+            ref={sigRef}
+            canvasProps={{ className: "signature-box" }}
+          />
+
+          <button className="button secondary" onClick={() => sigRef.current?.clear()}>
+            Clear Signature
+          </button>
+
+          <button className="button" style={{ marginLeft: 10 }} onClick={submitSignature}>
+            Submit Sign Off
+          </button>
+
+          {message && (
+            <p className={message.includes("successfully") ? "success" : "error"}>
+              {message}
+            </p>
+          )}
         </div>
       </div>
     </main>
