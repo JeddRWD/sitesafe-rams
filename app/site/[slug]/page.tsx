@@ -12,7 +12,6 @@ type Site = {
   rams_version: number;
   start_date: string | null;
   expiry_date: string | null;
-  is_active: boolean;
 };
 
 type RamsSection = {
@@ -22,283 +21,326 @@ type RamsSection = {
   section_order: number;
 };
 
-const pageStyle = { minHeight: "100vh", padding: 24 } as const;
-const containerStyle = { maxWidth: 900, margin: "0 auto" } as const;
-const cardStyle = { background: "white", borderRadius: 18, padding: 28, boxShadow: "0 10px 30px rgba(0,0,0,0.08)", marginBottom: 18 } as const;
-const inputStyle = { width: "100%", padding: 13, border: "1px solid #d1d5db", borderRadius: 10, margin: "8px 0 14px", fontSize: 16 } as const;
-const buttonStyle = { background: "#1f2937", color: "white", border: "none", padding: "13px 18px", borderRadius: 10, fontWeight: "bold", cursor: "pointer" } as const;
-
-export default function SiteRamsPage({
+export default function SitePage({
   params,
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  const resolvedParams = use(params);
-  const slug = resolvedParams.slug;
+  const { slug } = use(params);
 
   const [site, setSite] = useState<Site | null>(null);
   const [sections, setSections] = useState<RamsSection[]>([]);
   const [loading, setLoading] = useState(true);
   const [accessCode, setAccessCode] = useState("");
   const [hasAccess, setHasAccess] = useState(false);
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
+  const [message, setMessage] = useState("");
+
   const [operativeName, setOperativeName] = useState("");
   const [companyName, setCompanyName] = useState("");
   const [role, setRole] = useState("");
-  const [message, setMessage] = useState("");
+
   const sigRef = useRef<SignatureCanvas | null>(null);
 
   useEffect(() => {
-    async function loadSite() {
+    async function loadData() {
       const { data: siteData } = await supabase
         .from("sites")
         .select("*")
         .eq("slug", slug)
         .single();
 
-      if (siteData) {
-        setSite(siteData);
-
-        const { data: sectionData } = await supabase
-          .from("rams_sections")
-          .select("*")
-          .eq("site_id", siteData.id)
-          .eq("is_active", true)
-          .order("section_order", { ascending: true });
-
-        setSections(sectionData || []);
+      if (!siteData) {
+        setLoading(false);
+        return;
       }
 
+      setSite(siteData);
+
+      const { data: sectionData } = await supabase
+        .from("rams_sections")
+        .select("*")
+        .eq("site_id", siteData.id)
+        .order("section_order", { ascending: true });
+
+      setSections(sectionData || []);
       setLoading(false);
     }
 
-    loadSite();
+    loadData();
   }, [slug]);
-
-  function checkAccess() {
-    if (!site) return;
-
-    if (accessCode.trim().toLowerCase() === site.access_code.trim().toLowerCase()) {
-      setHasAccess(true);
-      setMessage("");
-    } else {
-      setMessage("Incorrect access code.");
-    }
-  }
 
   async function submitSignature() {
     if (!site) return;
 
-    if (!operativeName.trim()) {
+    if (!operativeName) {
       setMessage("Please enter your name.");
       return;
     }
 
     if (!sigRef.current || sigRef.current.isEmpty()) {
-      setMessage("Please provide a signature.");
+      setMessage("Please sign.");
       return;
     }
 
-    const signatureData = sigRef.current.toDataURL("image/png");
+    const signatureData = sigRef.current.toDataURL();
 
-    const { error } = await supabase.from("rams_acknowledgements").insert({
-      site_id: site.id,
-      operative_name: operativeName,
-      company_name: companyName,
-      role,
-      signature_data: signatureData,
-      rams_version: site.rams_version || 1,
-    });
+    const { error } = await supabase
+      .from("rams_acknowledgements")
+      .insert({
+        site_id: site.id,
+        operative_name: operativeName,
+        company_name: companyName,
+        role,
+        signature_data: signatureData,
+        rams_version: site.rams_version || 1,
+      });
 
     if (error) {
-      setMessage("Could not submit signature. Please try again.");
+      setMessage("Error submitting sign off.");
       return;
     }
 
-    setMessage("Signed and submitted successfully.");
+    setMessage("RAMS signed successfully.");
+
     setOperativeName("");
     setCompanyName("");
     setRole("");
+
     sigRef.current.clear();
   }
 
   if (loading) {
-    return (
-      <main style={pageStyle}>
-        <div style={containerStyle}>
-          <div style={cardStyle}>Loading...</div>
-        </div>
-      </main>
-    );
+    return <div style={{ padding: 40 }}>Loading...</div>;
   }
 
   if (!site) {
-    return (
-      <main style={pageStyle}>
-        <div style={containerStyle}>
-          <div style={cardStyle}>Site not found.</div>
-        </div>
-      </main>
-    );
+    return <div style={{ padding: 40 }}>Site not found.</div>;
   }
 
   if (!hasAccess) {
     return (
-      <main style={pageStyle}>
-        <div style={containerStyle}>
-          <div style={cardStyle}>
-            <h1>{site.site_name}</h1>
-            <p>Enter the site access code to view the RAMS.</p>
-
-            <input
-              style={inputStyle}
-              value={accessCode}
-              onChange={(e) => setAccessCode(e.target.value)}
-              placeholder="Access code"
-            />
-
-            <button style={buttonStyle} onClick={checkAccess}>
-              Access RAMS
-            </button>
-
-            {message && (
-              <p style={{ color: "#b91c1c", fontWeight: "bold" }}>{message}</p>
-            )}
-          </div>
-        </div>
-      </main>
-    );
-  }
-
-  return (
-    <main style={pageStyle}>
-      <div style={containerStyle}>
-        <div style={cardStyle}>
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "#f3f4f6",
+          padding: 40,
+        }}
+      >
+        <div
+          style={{
+            maxWidth: 500,
+            margin: "0 auto",
+            background: "white",
+            padding: 30,
+            borderRadius: 16,
+          }}
+        >
           <h1>{site.site_name}</h1>
-          <p>
-            <strong>RAMS Version:</strong> {site.rams_version || 1}
-          </p>
-          <p>
-            <strong>Start Date:</strong> {site.start_date || "Not set"}
-          </p>
-          <p>
-            <strong>Expiry Date:</strong> {site.expiry_date || "Not set"}
-          </p>
-        </div>
 
-        <div style={cardStyle}>
-          <h2>RAMS Sections</h2>
-
-          {sections.map((section) => (
-            <div key={section.id}>
-              <button
-                style={{
-                  width: "100%",
-                  textAlign: "left",
-                  background: "#eef2ff",
-                  border: "1px solid #c7d2fe",
-                  padding: 16,
-                  borderRadius: 12,
-                  fontWeight: "bold",
-                  cursor: "pointer",
-                  marginTop: 10,
-                }}
-                onClick={() =>
-                  setOpenSections({
-                    ...openSections,
-                    [section.id]: !openSections[section.id],
-                  })
-                }
-              >
-                {openSections[section.id] ? "▼" : "▶"} {section.title}
-              </button>
-
-              {openSections[section.id] && (
-                <div
-                  style={{
-                    padding: 16,
-                    border: "1px solid #e5e7eb",
-                    borderTop: "none",
-                    borderRadius: "0 0 12px 12px",
-                    whiteSpace: "pre-wrap",
-                  }}
-                >
-                  {section.content}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div style={cardStyle}>
-          <h2>Read & Understood Sign Off</h2>
-
-          <p>
-            By signing below, I confirm I have read and understood the site
-            specific RAMS.
-          </p>
+          <p>Enter site access code.</p>
 
           <input
-            style={inputStyle}
-            value={operativeName}
-            onChange={(e) => setOperativeName(e.target.value)}
-            placeholder="Operative name"
-          />
-
-          <input
-            style={inputStyle}
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            placeholder="Company name"
-          />
-
-          <input
-            style={inputStyle}
-            value={role}
-            onChange={(e) => setRole(e.target.value)}
-            placeholder="Role"
-          />
-
-          <SignatureCanvas
-            ref={sigRef}
-            canvasProps={{
-              style: {
-                border: "2px dashed #9ca3af",
-                borderRadius: 12,
-                background: "white",
-                width: "100%",
-                height: 180,
-                margin: "10px 0",
-              },
+            value={accessCode}
+            onChange={(e) => setAccessCode(e.target.value)}
+            placeholder="Access code"
+            style={{
+              width: "100%",
+              padding: 12,
+              marginBottom: 12,
             }}
           />
 
           <button
-            style={{ ...buttonStyle, background: "#6b7280" }}
-            onClick={() => sigRef.current?.clear()}
+            onClick={() => {
+              if (
+                accessCode.trim().toLowerCase() ===
+                site.access_code.toLowerCase()
+              ) {
+                setHasAccess(true);
+                setMessage("");
+              } else {
+                setMessage("Incorrect access code.");
+              }
+            }}
+            style={{
+              padding: "12px 20px",
+              background: "#111827",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+              cursor: "pointer",
+            }}
           >
-            Clear Signature
+            Access RAMS
+          </button>
+
+          {message && (
+            <p style={{ color: "red", marginTop: 12 }}>{message}</p>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "#f3f4f6",
+        padding: 40,
+      }}
+    >
+      <div style={{ maxWidth: 900, margin: "0 auto" }}>
+        <div
+          style={{
+            background: "white",
+            padding: 30,
+            borderRadius: 16,
+            marginBottom: 20,
+          }}
+        >
+          <h1>{site.site_name}</h1>
+
+          <p>
+            <strong>RAMS Version:</strong> {site.rams_version}
+          </p>
+
+          <p>
+            <strong>Start Date:</strong> {site.start_date || "N/A"}
+          </p>
+
+          <p>
+            <strong>Expiry Date:</strong> {site.expiry_date || "N/A"}
+          </p>
+        </div>
+
+        <div
+          style={{
+            background: "white",
+            padding: 30,
+            borderRadius: 16,
+            marginBottom: 20,
+          }}
+        >
+          <h2>RAMS Sections</h2>
+
+          {sections.map((section) => (
+            <details
+              key={section.id}
+              style={{
+                marginTop: 10,
+                border: "1px solid #d1d5db",
+                borderRadius: 8,
+                padding: 12,
+              }}
+            >
+              <summary
+                style={{
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                {section.title}
+              </summary>
+
+              <div style={{ marginTop: 10 }}>
+                {section.content}
+              </div>
+            </details>
+          ))}
+        </div>
+
+        <div
+          style={{
+            background: "white",
+            padding: 30,
+            borderRadius: 16,
+          }}
+        >
+          <h2>Sign Off</h2>
+
+          <p>
+            By signing below, I confirm I have read and understood
+            the RAMS.
+          </p>
+
+          <input
+            value={operativeName}
+            onChange={(e) => setOperativeName(e.target.value)}
+            placeholder="Operative name"
+            style={{
+              width: "100%",
+              padding: 12,
+              marginBottom: 12,
+            }}
+          />
+
+          <input
+            value={companyName}
+            onChange={(e) => setCompanyName(e.target.value)}
+            placeholder="Company"
+            style={{
+              width: "100%",
+              padding: 12,
+              marginBottom: 12,
+            }}
+          />
+
+          <input
+            value={role}
+            onChange={(e) => setRole(e.target.value)}
+            placeholder="Role"
+            style={{
+              width: "100%",
+              padding: 12,
+              marginBottom: 12,
+            }}
+          />
+
+          <div
+            style={{
+              border: "2px dashed #9ca3af",
+              borderRadius: 8,
+              marginBottom: 12,
+            }}
+          >
+            <SignatureCanvas
+              ref={sigRef}
+              canvasProps={{
+                width: 800,
+                height: 200,
+              }}
+            />
+          </div>
+
+          <button
+            onClick={() => sigRef.current?.clear()}
+            style={{
+              padding: "10px 16px",
+              marginRight: 10,
+            }}
+          >
+            Clear
           </button>
 
           <button
-            style={{ ...buttonStyle, marginLeft: 10 }}
             onClick={submitSignature}
+            style={{
+              padding: "10px 16px",
+              background: "#111827",
+              color: "white",
+              border: "none",
+              borderRadius: 8,
+            }}
           >
             Submit Sign Off
           </button>
 
           {message && (
-            <p
-              style={{
-                color: message.includes("successfully") ? "#047857" : "#b91c1c",
-                fontWeight: "bold",
-              }}
-            >
-              {message}
-            </p>
+            <p style={{ marginTop: 12 }}>{message}</p>
           )}
         </div>
       </div>
-    </main>
+    </div>
   );
 }
